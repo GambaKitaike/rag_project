@@ -1,7 +1,3 @@
-
-
-https://github.com/user-attachments/assets/2a746e0f-3c88-4f15-9ba3-d67ec0469fa2
-
 # 北池 頑張
 
 **概要**  
