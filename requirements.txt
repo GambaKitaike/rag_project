@@ -1,0 +1,25 @@
+# 基本的なフレームワーク
+streamlit>=1.38.0
+
+# LangChain 本体と主要コンポーネント
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-openai>=0.2.0
+langchain-chroma>=0.1.0
+langchain-text-splitters>=0.3.0
+
+# ベクトルストア
+chromadb>=0.5.0
+
+# 環境変数管理
+python-dotenv>=1.0.1
+
+# HTMLスクレイピング・ローダー用
+beautifulsoup4>=4.12.0
+bs4>=0.0.1
+
+# 追加で便利なもの
+tiktoken>=0.8.0          # OpenAIのトークン計算用
+pypdf>=5.0.0             # 将来PDFも扱う場合
+unstructured>=0.16.0     # より高度なHTML/PDF抽出が必要になったら

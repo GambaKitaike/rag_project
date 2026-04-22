@@ -1,0 +1,8 @@
+data/*.pdf
+data/*.docx
+crawled_data/*
+vectorstore/*
+*.pkl
+*.faiss
+chroma/
+.env
