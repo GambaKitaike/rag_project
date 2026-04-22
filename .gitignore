@@ -1,8 +1,4 @@
-data/*.pdf
-data/*.docx
-crawled_data/*
+data/*
 vectorstore/*
-*.pkl
-*.faiss
 chroma/
 .env
