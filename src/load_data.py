@@ -20,7 +20,7 @@ os.environ["USER_AGENT"] = "Mozilla/5.0 (compatible; MyRAGProject/1.0)"
 from crawler import PoliteCrawler
 
 start_url = "https://2021.help.altair.com/2021/hwsolvers/ja_jp/os/index.htm"
-crawler = PoliteCrawler(start_url, max_depth=5, save_dir="../data")
+crawler = PoliteCrawler(start_url, max_depth=5, save_dir="../data/crawled_data")
 urls = crawler.get_all_urls()
 
 PERSIST_DIRECTORY = "./vectorstore"
@@ -73,3 +73,9 @@ vectorstore = Chroma.from_documents(
 
 print(f"完了！ {len(chunks)}個のチャンクを保存しました")
 print("無料Embeddingモデルを使用しています")
+
+# load_data.py の一番下（vectorstore作成の後）に追加
+from data_utils import save_split_documents
+
+save_split_documents(chunks, "../data/split_documents.pkl")   # プロジェクトルートに保存
+print("📦 split_documents.pkl も保存しました（BM25用）")

@@ -5,8 +5,14 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from langchain_classic.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
+from pathlib import Path
 from dotenv import load_dotenv
+from data_utils import load_split_documents
 import os
+
+BASE_DIR = Path(__file__).parent.resolve()
 
 load_dotenv()
 
@@ -20,7 +26,9 @@ st.caption("Altair OptiStruct 2021 マニュアル特化型RAG（無料Embedding
 with st.sidebar:
     st.header("設定")
     temperature = st.slider("Temperature", 0.0, 1.0, 0.3, 0.1)
-    k = st.slider("取得する資料数 (k)", 3, 10, 6)
+    k_vector = st.slider("ベクトル検索で取得する資料数 (k)", 3, 10, 6)
+    k_bm25 = st.slider("BM25で取得する資料数 (k)", 3, 10, 6)
+    weights_vector = st.slider("ベクトル検索の割合(weights)", 0.0, 1.0, 0.65, 0.05)
 
 # ====================== ベクトルDBロード ======================
 @st.cache_resource
@@ -36,8 +44,24 @@ def load_vectorstore():
     )
     return vectorstore
 
-vectorstore = load_vectorstore()
-vector_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
+@st.cache_resource
+def load_hybrid_retriever():
+    vectorstore = load_vectorstore()
+    vector_retriever = vectorstore.as_retriever(search_kwargs={"k": k_vector})
+    
+    # BM25用にsplit_documentsをロード
+    split_docs = load_split_documents(BASE_DIR / "../data/split_documents.pkl")
+    bm25_retriever = BM25Retriever.from_documents(split_docs)
+    bm25_retriever.k = k_bm25
+    
+    # ハイブリッド
+    hybrid_retriever = EnsembleRetriever(
+        retrievers=[vector_retriever, bm25_retriever],
+        weights=[weights_vector, 1.0 - weights_vector]
+    )
+    return hybrid_retriever
+
+hybrid_retriever = load_hybrid_retriever()
 
 # ====================== LLM ======================
 from langchain_openai import ChatOpenAI   # まだOpenAIのLLMは使えるはず
@@ -67,7 +91,7 @@ def format_docs(docs):
     )
 
 rag_chain = (
-    {"context": vector_retriever | format_docs, "question": RunnablePassthrough()}
+    {"context": hybrid_retriever | format_docs, "question": RunnablePassthrough()}
     | prompt
     | llm
     | StrOutputParser()
@@ -93,7 +117,7 @@ if question := st.chat_input("HyperMesh / OptiStructについて質問してく�
             
             # 引用資料表示
             with st.expander("📑 参照した資料"):
-                docs = vector_retriever.invoke(question)
+                docs = hybrid_retriever.invoke(question)
                 for i, doc in enumerate(docs, 1):
                     st.markdown(f"**[{i}]** {doc.metadata.get('source', '不明')}")
                     preview = doc.page_content[:400] + "..." if len(doc.page_content) > 400 else doc.page_content
