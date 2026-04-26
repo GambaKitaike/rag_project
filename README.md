@@ -1,5 +1,3 @@
-# 北池 頑張
-
 **概要**  
 HyperMesh / OptiStruct（Altair製品）のマニュアル・技術資料に特化したRetrieval-Augmented Generation（RAG）アプリケーションです。  
 マニュアルは下記URLから一部抜粋して使用しています。  
