@@ -2,3 +2,5 @@ data/*
 vectorstore/*
 chroma/
 .env
+__pycache__/
+*.py[cod]

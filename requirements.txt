@@ -1,25 +1,37 @@
-# 基本的なフレームワーク
-streamlit>=1.38.0
+# requirements.txt
+# HyperMesh/OptiStruct RAGプロジェクト用
 
-# LangChain 本体と主要コンポーネント
-langchain>=0.3.0
-langchain-core>=0.3.0
-langchain-community>=0.3.0
-langchain-openai>=0.2.0
-langchain-chroma>=0.1.0
-langchain-text-splitters>=0.3.0
+# ==================== メイン ====================
+streamlit>=1.56.0
 
-# ベクトルストア
-chromadb>=0.5.0
+# LangChain エコシステム
+langchain>=1.2.15
+langchain-core>=1.3.0
+langchain-community>=0.4.1
+langchain-classic>=1.0.4
+langchain-chroma>=1.1.0
+langchain-openai>=1.1.15
+langchain-huggingface>=1.2.2
+langchain-text-splitters>=1.1.2
 
-# 環境変数管理
-python-dotenv>=1.0.1
+# Vector Store & Embeddings
+chromadb>=1.5.8
+huggingface-hub>=1.11.0
 
-# HTMLスクレイピング・ローダー用
-beautifulsoup4>=4.12.0
-bs4>=0.0.1
+# Retriever
+rank-bm25>=0.2.2
 
-# 追加で便利なもの
-tiktoken>=0.8.0          # OpenAIのトークン計算用
-pypdf>=5.0.0             # 将来PDFも扱う場合
-unstructured>=0.16.0     # より高度なHTML/PDF抽出が必要になったら
+# LLM & その他
+openai>=2.32.0
+python-dotenv>=1.2.2
+
+# データ処理・ローダー
+pypdf>=6.10.2
+beautifulsoup4>=4.14.3
+lxml>=6.0.2
+requests>=2.32.5
+unstructured>=0.18.32
+
+# オプション（トークナイザーなど）
+tiktoken>=0.12.0
+torch>=2.5.0
