@@ -1,10 +1,10 @@
 # requirements.txt
-# HyperMesh/OptiStruct RAGプロジェクト用
+# HyperMesh/OptiStruct RAG — src/ で実際に import される依存のみ
 
-# ==================== メイン ====================
+# ==================== UI ====================
 streamlit>=1.56.0
 
-# LangChain エコシステム
+# ==================== LangChain ====================
 langchain>=1.2.15
 langchain-core>=1.3.0
 langchain-community>=0.4.1
@@ -14,24 +14,22 @@ langchain-openai>=1.1.15
 langchain-huggingface>=1.2.2
 langchain-text-splitters>=1.1.2
 
-# Vector Store & Embeddings
+# ==================== Vector store & BM25 ====================
 chromadb>=1.5.8
-huggingface-hub>=1.11.0
-
-# Retriever
 rank-bm25>=0.2.2
 
-# LLM & その他
-openai>=2.32.0
-python-dotenv>=1.2.2
-
-# データ処理・ローダー
-pypdf>=6.10.2
-beautifulsoup4>=4.14.3
-lxml>=6.0.2
-requests>=2.32.5
-unstructured>=0.18.32
-
-# オプション（トークナイザーなど）
-tiktoken>=0.12.0
+# ==================== Embeddings (HuggingFace) ====================
+huggingface-hub>=1.11.0
+sentence-transformers>=3.3.0
 torch>=2.5.0
+
+# ==================== LLM API ====================
+openai>=2.32.0
+
+# ==================== Config & HTML ====================
+python-dotenv>=1.2.2
+beautifulsoup4>=4.14.3
+requests>=2.32.5
+
+# ==================== graph_retrieval (BaseRetriever) ====================
+pydantic>=2.10.0

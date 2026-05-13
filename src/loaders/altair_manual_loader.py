@@ -8,12 +8,8 @@ from typing import Dict, List
 from urllib.parse import urldefrag, urljoin, urlparse
 
 from bs4 import BeautifulSoup
+from langchain_community.document_loaders import RecursiveUrlLoader
 from langchain_core.documents import Document
-
-try:
-    from langchain_community.document_loaders import RecursiveUrlLoader
-except ImportError:
-    from langchain_community.document_loaders.recursive_url_loader import RecursiveUrlLoader
 
 logger = logging.getLogger(__name__)
 
