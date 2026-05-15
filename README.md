@@ -9,13 +9,11 @@ https://2021.help.altair.com/2021/hwsolvers/ja_jp/os/index.htm
 
 ## デモ
 
-Streamlit 上での質問応答（GIF 由来の短尺デモ・[`docs/demo-hypermesh-rag.mp4`](docs/demo-hypermesh-rag.mp4)・約 0.4MB）:
+Streamlit 上での質問応答（GIF）:
 
-<video src="docs/demo-hypermesh-rag.mp4" controls width="100%" autoplay loop muted playsinline>
-  お使いのブラウザは video タグに未対応です。<a href="docs/demo-hypermesh-rag.mp4">demo-hypermesh-rag.mp4</a> を直接開いてください。
-</video>
+![HyperMesh / OptiStruct RAG デモの操作画面](docs/demo-hypermesh-rag.gif)
 
-※ リポジトリには軽量版のみ含めています（元のフル録画は約 15MB のため非掲載）。GitHub 上で埋め込みが表示されない場合は、上記 MP4 をダウンロードして再生してください。`.gif` ファイルがあれば `![デモ](docs/demo-hypermesh-rag.gif)` でも README に載せられます（自動ループ表示向け）。
+高画質の録画（MP4・約 15MB）: [`docs/demo-hypermesh-rag.mp4`](docs/demo-hypermesh-rag.mp4)
 
 ---
 
@@ -89,7 +87,8 @@ flowchart LR
 rag_project/
 ├── README.md
 ├── docs/
-│   └── demo-hypermesh-rag.mp4   # 操作デモ動画
+│   ├── demo-hypermesh-rag.gif   # README 用デモ（GIF）
+│   └── demo-hypermesh-rag.mp4   # 高画質録画（任意）
 ├── requirements.txt
 ├── .env                    # 各自作成（Git 管理外推奨）
 ├── data/                   # split_documents.pkl 等（生成物・.gitignore 想定）
