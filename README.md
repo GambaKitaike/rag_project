@@ -56,7 +56,7 @@ flowchart LR
   chroma[Chroma index]
   bm25[BM25 index]
   hybrid[Ensemble retriever]
-  graph[Graph expand 1-hop]
+  gexpand[Graph expand 1-hop]
   llm[OpenAI Chat]
 
   crawl --> chunk
@@ -64,8 +64,8 @@ flowchart LR
   chunk --> bm25
   chroma --> hybrid
   bm25 --> hybrid
-  hybrid --> graph
-  graph --> llm
+  hybrid --> gexpand
+  gexpand --> llm
 ```
 
 ---
