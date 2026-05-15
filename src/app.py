@@ -7,12 +7,17 @@ from langchain_chroma import Chroma
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 
-from data_utils import load_split_documents
+from data_utils import (
+    bm25_tokenize_japanese,
+    huggingface_e5_embedding_kwargs,
+    load_split_documents,
+    resolve_embedding_torch_device,
+)
 from graph_retrieval import (
     GraphExpandedRetriever,
     build_adjacency_from_chunks,
@@ -36,8 +41,21 @@ with st.sidebar:
                             help="値を大きくすると、回答のランダム性が増します")
     k = st.slider("取得する資料数 (k)", 3, 10, 6)
     weights_vector = st.slider("ベクトル検索の割合(weights)", 0.0, 1.0, 0.65, 0.05)
-    display_k = st.slider("参照資料として表示する数", 3, 8, 5,
-                          help="多すぎると見づらいので、画面表示はここで制限します")
+    display_k = st.slider(
+        "参照資料の表示上限（件）",
+        1,
+        12,
+        6,
+        help="プロンプトに渡す・画面に出す参照チャンクの最大件数。関連度が足りない場合は 0 件になります。",
+    )
+    min_vector_relevance = st.slider(
+        "ベクトル関連度しきい値",
+        0.10,
+        0.55,
+        0.28,
+        0.02,
+        help="上位1件のベクトル類似度（0〜1）がこの値未満なら、資料なしとして回答します。高いほど厳しく、低いほど緩くなります。",
+    )
 
     st.subheader("ハイパーリンクグラフ拡張")
     use_graph = st.checkbox(
@@ -63,24 +81,28 @@ with st.sidebar:
 
 @st.cache_resource
 def load_search_bundle():
-    embeddings = HuggingFaceEmbeddings(
-        model_name="intfloat/multilingual-e5-large",
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True},
-    )
+    embed_device = resolve_embedding_torch_device()
+    embeddings = HuggingFaceEmbeddings(**huggingface_e5_embedding_kwargs(embed_device))
     vectorstore = Chroma(
         persist_directory="./vectorstore",
         embedding_function=embeddings,
     )
     split_path = BASE_DIR / "../data/split_documents.pkl"
     split_docs = load_split_documents(split_path)
-    bm25_retriever = BM25Retriever.from_documents(split_docs)
+    bm25_retriever = BM25Retriever.from_documents(
+        split_docs,
+        preprocess_func=bm25_tokenize_japanese,
+    )
     adjacency = build_adjacency_from_chunks(split_docs)
     chunks_by_url = index_chunks_by_url(split_docs)
-    return vectorstore, bm25_retriever, adjacency, chunks_by_url
+    return vectorstore, bm25_retriever, adjacency, chunks_by_url, embed_device
 
 
-vectorstore, bm25_retriever, adjacency, chunks_by_url = load_search_bundle()
+vectorstore, bm25_retriever, adjacency, chunks_by_url, embedding_device = load_search_bundle()
+st.sidebar.caption(
+    f"Embedding: {embedding_device}（E5 query/passage）。"
+    "Chroma は load_data.py 再実行後の vectorstore と揃えてください。"
+)
 bm25_retriever.k = k
 vector_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
 
@@ -132,12 +154,23 @@ def format_docs(docs):
     )
 
 
-rag_chain = (
-    {"context": hybrid_retriever | format_docs, "question": RunnablePassthrough()}
-    | prompt
-    | llm
-    | StrOutputParser()
-)
+def _max_vector_relevance(question: str) -> float:
+    """Chroma コサイン類似度を 0〜1 に正規化したスコアの最大値（最良ヒットの関連度）。"""
+    probe_k = max(k, display_k, 5)
+    scored = vectorstore.similarity_search_with_relevance_scores(question, k=probe_k)
+    if not scored:
+        return 0.0
+    return max(score for _, score in scored)
+
+
+def _retrieve_docs_for_turn(question: str) -> list[Document]:
+    """ベクトル関連度が足りない場合は空。足りればハイブリッド検索結果を表示上限で切る。"""
+    if _max_vector_relevance(question) < min_vector_relevance:
+        return []
+    return hybrid_retriever.invoke(question)[:display_k]
+
+
+answer_chain = prompt | llm | StrOutputParser()
 
 # ====================== チャット ======================
 if "messages" not in st.session_state:
@@ -154,30 +187,30 @@ if question := st.chat_input("HyperMesh / OptiStructについて質問してく�
 
     with st.chat_message("assistant"):
         with st.spinner("マニュアルを検索して回答を考えています..."):
-            answer = rag_chain.invoke(question)
+            docs = _retrieve_docs_for_turn(question)
+            context = format_docs(docs)
+            answer = answer_chain.invoke({"context": context, "question": question})
             st.markdown(answer)
 
-            # 引用資料表示
-            with st.expander(f"📑 参照した資料（上位 {display_k} 件を表示）"):
-                docs = hybrid_retriever.invoke(question)
+            if docs:
+                with st.expander(f"📑 参照資料（最大 {display_k} 件）"):
+                    for i, doc in enumerate(docs, 1):
+                        source = (
+                            doc.metadata.get("source_url")
+                            or doc.metadata.get("source")
+                            or "不明"
+                        )
+                        page = doc.metadata.get("page", "")
+                        page_info = f" (p.{page})" if page else ""
 
-                for i, doc in enumerate(docs[:display_k], 1):
-                    source = (
-                        doc.metadata.get("source_url")
-                        or doc.metadata.get("source")
-                        or "不明"
-                    )
-                    page = doc.metadata.get("page", "")
-                    page_info = f" (p.{page})" if page else ""
+                        st.markdown(f"**[{i}] {source}{page_info}**")
 
-                    st.markdown(f"**[{i}] {source}{page_info}**")
+                        preview = doc.page_content[:320]
+                        if len(doc.page_content) > 320:
+                            preview += "..."
+                        st.caption(preview)
 
-                    preview = doc.page_content[:320]
-                    if len(doc.page_content) > 320:
-                        preview += "..."
-                    st.caption(preview)
-
-                    if i < display_k:
-                        st.divider()
+                        if i < len(docs):
+                            st.divider()
 
     st.session_state.messages.append({"role": "assistant", "content": answer})

@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 from urllib.parse import urldefrag, urljoin, urlparse
 
+import requests
 from bs4 import BeautifulSoup
-from langchain_community.document_loaders import RecursiveUrlLoader
 from langchain_core.documents import Document
+from langchain_core.utils.html import extract_sub_links
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,8 @@ class AltairManualLoaderConfig:
     start_url: str
     max_depth: int = 8
     allowed_domain: str = "altair.com"
-    common_link_ratio_threshold: float = 0.7
+    # None = 出現頻度による共通リンク除去を行わない（ナビ除外後の候補をそのまま links に使う）
+    common_link_ratio_threshold: Optional[float] = 0.7
     max_links_per_page: int = 300
     timeout_sec: int = 20
     user_agent: str = DEFAULT_USER_AGENT
@@ -102,8 +104,14 @@ def _extract_links_for_graph(
 
 
 def _filter_common_links(
-    page_links: dict[str, list[str]], threshold_ratio: float, total_pages: int
+    page_links: dict[str, list[str]],
+    threshold_ratio: Optional[float],
+    total_pages: int,
 ) -> tuple[dict[str, list[str]], set[str]]:
+    """Remove links that appear on >= max(2, ceil(n * ratio)) pages. threshold_ratio None skips removal."""
+    if threshold_ratio is None:
+        return {url: list(links) for url, links in page_links.items()}, set()
+
     if total_pages <= 1:
         return page_links, set()
 
@@ -121,39 +129,127 @@ def _filter_common_links(
     return filtered, common_links
 
 
+def _canonical_fetch_url(url: str) -> str:
+    clean, _ = urldefrag(url.strip())
+    return clean
+
+
 def _load_recursive_docs(config: AltairManualLoaderConfig) -> list[Document]:
-    loader = RecursiveUrlLoader(
-        url=config.start_url,
-        max_depth=config.max_depth,
-        prevent_outside=True,
-        timeout=config.timeout_sec,
-        check_response_status=True,
-        continue_on_failure=True,
-        headers={"User-Agent": config.user_agent},
+    """
+    Breadth-first crawl of same-host HTML pages.
+
+    ``max_depth`` is the number of *hops* from ``start_url``: depth 0 is the start
+    page only; depth 1 adds all pages linked from it; depth 2 adds pages linked from
+    those, etc. (Pages fetched when their hop depth is in ``0 .. max_depth - 1``,
+    matching the intuitive reading of ``max_depth`` for manual sites.)
+
+    This avoids depth-first ordering issues in LangChain's RecursiveUrlLoader where
+    deep branches can interact badly with a global visited set.
+    """
+    parsed = urlparse(config.start_url)
+    base_for_extract = f"{parsed.scheme}://{parsed.netloc}/"
+
+    dq: deque[tuple[str, int]] = deque([(config.start_url, 0)])
+    fetched: set[str] = set()
+    failed: set[str] = set()
+    session = requests.Session()
+    session.headers.update({"User-Agent": config.user_agent})
+
+    docs: list[Document] = []
+    failures = 0
+
+    while dq:
+        url, depth = dq.popleft()
+        current = _canonical_fetch_url(url)
+        if current in fetched or current in failed:
+            continue
+        if depth >= config.max_depth:
+            continue
+
+        try:
+            response = session.get(
+                current,
+                timeout=config.timeout_sec,
+                allow_redirects=True,
+            )
+            if response.status_code >= 400:
+                raise ValueError(f"HTTP {response.status_code}")
+            if response.encoding == "ISO-8859-1":
+                response.encoding = response.apparent_encoding
+            final_url = _canonical_fetch_url(response.url)
+            raw_html = response.text
+        except Exception as e:
+            failed.add(current)
+            failures += 1
+            logger.warning("Skip %s: %s", current, e)
+            continue
+
+        if not _is_allowed_domain(final_url, config.allowed_domain):
+            failed.add(current)
+            continue
+
+        fetched.add(final_url)
+        docs.append(
+            Document(
+                page_content=raw_html,
+                metadata={
+                    "source": final_url,
+                    "content_type": response.headers.get("Content-Type", ""),
+                },
+            )
+        )
+
+        child_depth = depth + 1
+        if child_depth >= config.max_depth:
+            continue
+
+        try:
+            sub_links = extract_sub_links(
+                raw_html,
+                final_url,
+                base_url=base_for_extract,
+                prevent_outside=True,
+                exclude_prefixes=(),
+                continue_on_failure=True,
+            )
+        except Exception:
+            logger.exception("extract_sub_links failed for %s", final_url)
+            continue
+
+        for link in sub_links:
+            norm = _canonical_fetch_url(link)
+            if not _is_allowed_domain(norm, config.allowed_domain):
+                continue
+            if norm in fetched or norm in failed:
+                continue
+            dq.append((norm, child_depth))
+
+    if failures:
+        print(f"[注意] HTTP 取得失敗・スキップ: {failures} URL（詳細はログ）")
+    print(
+        f"[クロール] BFS 完了: {len(docs)} ページ "
+        f"(max_depth={config.max_depth} = 起点からの最大ホップ数)"
     )
-    docs = loader.load()
-    return [
-        doc
-        for doc in docs
-        if _is_allowed_domain(doc.metadata.get("source", ""), config.allowed_domain)
-    ]
+    return docs
 
 
 def load_altair_manual_documents(
     start_url: str,
     max_depth: int = 8,
     allowed_domain: str = "altair.com",
-    common_link_ratio_threshold: float = 0.7,
+    common_link_ratio_threshold: Optional[float] = 0.7,
     max_links_per_page: int = 300,
     timeout_sec: int = 20,
     user_agent: str = DEFAULT_USER_AGENT,
 ) -> list[Document]:
     """
-    Recursively crawl manual HTML with RecursiveUrlLoader, extract body text and
-    internal links with BeautifulSoup (single parse per page).
+    Recursively crawl manual HTML with same-host BFS (requests + extract_sub_links),
+    extract body text and internal links with BeautifulSoup (single parse per page).
 
-    Each Document has metadata["source_url"] and metadata["links"] (nav-filtered,
-    common-link filtered). metadata["all_links"] lists all *.allowed_domain links.
+    Each Document has metadata["source_url"] and metadata["links"] (nav-filtered;
+    if common_link_ratio_threshold is set, links appearing on many pages are removed).
+    metadata["all_links"] lists all *.allowed_domain links.
+    Pass common_link_ratio_threshold=None to disable frequency-based link filtering.
     """
     config = AltairManualLoaderConfig(
         start_url=start_url,
@@ -169,8 +265,8 @@ def load_altair_manual_documents(
     raw_docs = _load_recursive_docs(config)
     t_fetch = time.perf_counter() - t0
     print(
-        f"[タイミング] 再帰HTTP取得 (RecursiveUrlLoader): {_fmt_duration(t_fetch)} "
-        f"（生HTML {len(raw_docs)} ページ）"
+        f"[タイミング] BFS HTTP取得: {_fmt_duration(t_fetch)} "
+        f"（HTML {len(raw_docs)} ページ）"
     )
 
     page_candidates: dict[str, list[str]] = {}
@@ -226,6 +322,14 @@ def load_altair_manual_documents(
         threshold_ratio=config.common_link_ratio_threshold,
         total_pages=len(parsed_docs),
     )
+    if config.common_link_ratio_threshold is None:
+        print("[設定] 共通リンク除去: オフ（出現頻度フィルタなし）")
+    else:
+        thr = max(2, int(len(parsed_docs) * config.common_link_ratio_threshold))
+        print(
+            f"[設定] 共通リンク除去: ratio={config.common_link_ratio_threshold} "
+            f"（{thr}ページ以上に出るリンクを links から除外）"
+        )
 
     finalized_docs: list[Document] = []
     for doc in parsed_docs:
@@ -240,7 +344,12 @@ def load_altair_manual_documents(
             "all_links_count": len(all_links),
             "links_count": len(page_links),
             "excluded_links_count": max(0, len(all_links) - len(page_links)),
-            "common_links_threshold": config.common_link_ratio_threshold,
+            "common_links_threshold": (
+                config.common_link_ratio_threshold
+                if config.common_link_ratio_threshold is not None
+                else -1.0
+            ),
+            "common_links_filter_disabled": config.common_link_ratio_threshold is None,
             "common_links_detected_total": len(common_links),
         }
         finalized_docs.append(Document(page_content=doc.page_content, metadata=updated_metadata))
@@ -254,8 +363,8 @@ def load_altair_manual_documents(
         f"（取得 {_fmt_duration(t_fetch)} / 解析 {_fmt_duration(t_parse)} / 後処理 {_fmt_duration(t_post)}）"
     )
     print(
-        "✅ Recursive loader 完了 "
-        f"(pages={len(finalized_docs)}, common_links={len(common_links)}, depth={config.max_depth})"
+        "✅ Manual loader 完了 "
+        f"(pages={len(finalized_docs)}, common_links={len(common_links)}, max_depth={config.max_depth})"
     )
     return finalized_docs
 

@@ -21,6 +21,8 @@ rank-bm25>=0.2.2
 # ==================== Embeddings (HuggingFace) ====================
 huggingface-hub>=1.11.0
 sentence-transformers>=3.3.0
+# PyTorch: 標準 pip では CPU ビルドのことが多い。NVIDIA GPU で埋め込みを高速化する場合は
+# https://pytorch.org/ の「Install」に従い、CUDA 対応 wheel を入れてください（コードは cuda 利用可能時に自動選択）。
 torch>=2.5.0
 
 # ==================== LLM API ====================

@@ -14,8 +14,13 @@ def run_crawl(
     max_depth: int,
     docs_output: Path,
     graph_output: Path,
+    common_link_ratio_threshold: float | None = 0.7,
 ) -> None:
-    docs = load_altair_manual_documents(start_url, max_depth=max_depth)
+    docs = load_altair_manual_documents(
+        start_url,
+        max_depth=max_depth,
+        common_link_ratio_threshold=common_link_ratio_threshold,
+    )
     graph = build_hyperlink_graph(docs)
 
     docs_output.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +53,19 @@ def parse_args() -> argparse.Namespace:
         default="../data/hyperlink_graph.json",
         help="Output JSON path for hyperlink graph.",
     )
+    parser.add_argument(
+        "--common-link-ratio",
+        default="0.7",
+        help='Drop links appearing on >= ceil(n*ratio) pages (0.0-1.0). Use "off" to disable.',
+    )
     return parser.parse_args()
+
+
+def _parse_common_link_ratio(value: str) -> float | None:
+    lowered = value.strip().lower()
+    if lowered in ("off", "none", "disable"):
+        return None
+    return float(lowered)
 
 
 if __name__ == "__main__":
@@ -58,4 +75,5 @@ if __name__ == "__main__":
         max_depth=args.max_depth,
         docs_output=BASE_DIR / args.docs_output,
         graph_output=BASE_DIR / args.graph_output,
+        common_link_ratio_threshold=_parse_common_link_ratio(args.common_link_ratio),
     )
